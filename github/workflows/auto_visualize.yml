@@ -1,0 +1,185 @@
+name: Auto Visualize Watershed
+
+on:
+  push:
+    paths:
+      - 'data/**'
+  workflow_dispatch:
+    inputs:
+      dem_path:
+        description: 'DEM filename inside data/ (default: dem.tif)'
+        required: false
+        default: 'dem.tif'
+
+permissions:
+  contents: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────
+  #  JOB 1 — Validate uploaded data
+  # ─────────────────────────────────────────────────────────
+  validate:
+    name: 🔍 Validate Data Files
+    runs-on: ubuntu-latest
+    outputs:
+      data_ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check data directory
+        id: check
+        run: |
+          echo "📂 Data directory contents:"
+          ls -lh data/ 2>/dev/null || echo "(empty)"
+
+          # Check for ZIP
+          ZIP=$(find data/ -name "*.zip" 2>/dev/null | head -1)
+          # Check for DEM
+          DEM=$(find data/ -name "*.tif" -iname "*dem*" 2>/dev/null | head -1)
+          DEM2=$(find data/ -name "dem.tif" 2>/dev/null | head -1)
+          # Check for subbasin shapefile
+          SHP=$(find data/ -name "*.shp" 2>/dev/null | head -1)
+
+          if [ -n "$ZIP" ] || [ -n "$DEM" ] || [ -n "$DEM2" ] || [ -n "$SHP" ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "✅ Data files detected"
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No recognisable data files found in data/"
+            echo "Expected: dem.tif, subbasins.shp, streams.shp, etc. or a .zip"
+          fi
+
+  # ─────────────────────────────────────────────────────────
+  #  JOB 2 — Run morphometric analysis pipeline
+  # ─────────────────────────────────────────────────────────
+  analyze:
+    name: 🏔️ Run Morphometric Analysis
+    needs: validate
+    if: needs.validate.outputs.data_ready == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Python setup ───────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install GDAL system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            gdal-bin libgdal-dev python3-gdal \
+            libspatialindex-dev libgeos-dev libproj-dev \
+            libhdf5-dev libnetcdf-dev
+          echo "GDAL_VERSION=$(gdal-config --version)" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip wheel
+          pip install -r requirements.txt
+
+      # ── Prepare output directories ─────────────────────────
+      - name: Create output directories
+        run: |
+          mkdir -p outputs/{previews,tables,html,shapefiles,report}
+
+      # ── Extract ZIP if present ────────────────────────────
+      - name: Extract data ZIP if present
+        run: |
+          ZIP=$(find data/ -name "*.zip" | head -1)
+          if [ -n "$ZIP" ]; then
+            echo "📦 Extracting $ZIP"
+            unzip -o "$ZIP" -d data/extracted/
+          fi
+
+      # ── Run pipeline ────────────────────────────────────────
+      - name: 🚀 Run full morphometric pipeline
+        timeout-minutes: 30
+        env:
+          DATA_DIR: ${{ github.workspace }}/data
+          OUT_DIR: ${{ github.workspace }}/outputs
+          MAPS_DIR: ${{ github.workspace }}/outputs/previews
+          PLOTS_DIR: ${{ github.workspace }}/outputs/previews
+          TABLES_DIR: ${{ github.workspace }}/outputs/tables
+          SHAPES_DIR: ${{ github.workspace }}/outputs/shapefiles
+          REPORT_DIR: ${{ github.workspace }}/outputs/report
+          HTML_DIR: ${{ github.workspace }}/outputs/html
+          GITHUB_ACTIONS: "true"
+        run: |
+          python scripts/ci_runner.py
+
+      # ── Update README with results table ─────────────────
+      - name: 📋 Patch README with results table
+        run: |
+          python scripts/patch_readme.py
+
+      # ── List outputs ──────────────────────────────────────
+      - name: List generated outputs
+        run: |
+          echo "📂 Preview images:"
+          ls -lh outputs/previews/*.png 2>/dev/null | head -30
+          echo ""
+          echo "📊 Tables:"
+          ls -lh outputs/tables/*.csv 2>/dev/null
+          echo ""
+          echo "📄 Report:"
+          ls -lh outputs/report/ 2>/dev/null
+
+      # ── Commit outputs back to repo ───────────────────────
+      - name: 💾 Commit outputs to repository
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git add outputs/previews/*.png 2>/dev/null || true
+          git add outputs/tables/*.csv 2>/dev/null || true
+          git add outputs/report/ 2>/dev/null || true
+          git add outputs/shapefiles/ 2>/dev/null || true
+          git add README.md
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "🗺️ auto: update morphometric outputs [skip ci]
+
+            Generated from data push at $(date -u '+%Y-%m-%d %H:%M UTC')
+            • $(ls outputs/previews/*.png 2>/dev/null | wc -l) maps
+            • $(ls outputs/tables/*.csv  2>/dev/null | wc -l) CSV tables
+            Workflow: ${{ github.run_id }}"
+            git push
+          fi
+
+      # ── Upload as artifact (always available) ─────────────
+      - name: 📦 Upload outputs as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: morphometric-outputs-${{ github.run_id }}
+          path: |
+            outputs/previews/
+            outputs/tables/
+            outputs/report/
+          retention-days: 30
+
+      # ── Summary ─────────────────────────────────────────
+      - name: Write job summary
+        run: |
+          echo "## 🏔️ Morphometric Analysis Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Count |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Maps generated | $(ls outputs/previews/*.png 2>/dev/null | wc -l) |" >> $GITHUB_STEP_SUMMARY
+          echo "| CSV tables | $(ls outputs/tables/*.csv 2>/dev/null | wc -l) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Report size | $(du -sh outputs/report/ 2>/dev/null | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Maps Preview" >> $GITHUB_STEP_SUMMARY
+          for f in outputs/previews/*.png; do
+            name=$(basename "$f")
+            echo "![${name}](https://raw.githubusercontent.com/${{ github.repository }}/main/outputs/previews/${name})" >> $GITHUB_STEP_SUMMARY
+          done
