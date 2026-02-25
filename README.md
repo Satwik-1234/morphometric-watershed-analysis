@@ -449,11 +449,11 @@ If you use this pipeline in your research, please cite:
 
 ```bibtex
 @software{morphometric_analysis_2025,
-  author    = {Your Name},
+  author    = {Satwik K Udupi},
   title     = {Watershed Morphometric Analysis Pipeline},
-  year      = {2025},
+  year      = {2026},
   publisher = {GitHub},
-  url       = {https://github.com/YOUR_USERNAME/morphometric-watershed-analysis},
+  url       = {https://github.com/Satwik-1234/morphometric-watershed-analysis},
   doi       = {10.5281/zenodo.XXXXXXX}
 }
 ```
