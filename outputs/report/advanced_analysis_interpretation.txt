@@ -1,0 +1,24 @@
+================================================================================
+ADVANCED MORPHOMETRIC ANALYSIS — SUPPLEMENTARY INTERPRETATIONS
+================================================================================
+
+10. TECTONIC ACTIVITY ANALYSIS
+----------------------------------------
+The Index of Active Tectonics (IAT) integrates four geomorphic proxies: Asymmetry Factor (AF), Transverse Symmetry (T), Valley Floor Width-to-Height Ratio (Vf), and Mountain Front Sinuosity (Smf), following El Hamdouni et al. (2008). AF values deviating substantially from 50 indicate basin tilting driven by differential uplift or lithological asymmetry. Vf < 0.5 is diagnostic of active incision associated with tectonic uplift, producing V-shaped valleys, whereas Vf > 1.0 reflects reduced tectonic activity and lateral widening. Low Smf (< 1.4) indicates a tectonically active, straight mountain front.
+
+  SB1: IAT=2.25 (Class 3 — Moderate). AF=51.26, T=0.6331, Vf=1.470, Smf=1.555.
+  SB2: IAT=2.25 (Class 3 — Moderate). AF=47.78, T=0.7870, Vf=3.329, Smf=1.688.
+  SB3: IAT=2.25 (Class 3 — Moderate). AF=53.08, T=0.8544, Vf=3.165, Smf=2.857.
+  SB4: IAT=2.25 (Class 3 — Moderate). AF=52.53, T=1.3624, Vf=4.575, Smf=2.428.
+  SB5: IAT=2.25 (Class 3 — Moderate). AF=47.03, T=0.8298, Vf=1.390, Smf=1.656.
+
+11. CHANNEL STEEPNESS & CONCAVITY
+----------------------------------------
+Channel steepness indices (ksn) and concavity (θ) were derived from the slope-area relationship following Hack (1973) and Flint (1974). High ksn values indicate either strong lithological resistance, active rock uplift, or transient adjustment to base-level change. The chi (χ) coordinate plot (Perron & Royden, 2012) allows comparison of drainage networks independent of their spatial position, where non-collinear χ-elevation relationships between adjacent basins signal ongoing divide migration or stream capture. SL anomaly hotspots correspond to knickpoints or reaches crossing resistant lithological boundaries.
+
+  (Steepness and concavity parameters were not computed in this run.)
+
+12. GEOMORPHIC ANOMALY & LINEAMENT ANALYSIS
+----------------------------------------
+The Geomorphic Anomaly Index (GAI) integrates SL anomaly, TRI, and inverse TWI to identify geomorphically active zones where structural or lithological controls modulate landscape evolution. High GAI zones (top 20th percentile) are spatially coincident with anomalously high SL reaches, implying knickpoint clusters, fault zones, or resistant bedrock outcrops. Structural lineaments were identified as a proxy using Sobel edge detection combined with Probabilistic Hough Line Transform, targeting linear high-gradient alignments in the DEM and slope rasters.
+
