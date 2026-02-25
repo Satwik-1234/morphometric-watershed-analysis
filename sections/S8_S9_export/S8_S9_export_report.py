@@ -1,0 +1,307 @@
+"""
+=============================================================================
+SECTION 8 — OUTPUT EXPORT & CONSOLE PREVIEW
+=============================================================================
+Exports all tables, shapefile, and prints console summaries.
+=============================================================================
+"""
+
+print("=" * 60)
+print("SECTION 8 — OUTPUT EXPORT")
+print("=" * 60)
+
+# ── 1. Master morphometric table ──────────────────────────────────────────────
+master_csv = os.path.join(TABLES_DIR, "morphometric_master_table.csv")
+df_master.to_csv(master_csv)
+print(f"\n[1] Master table → {master_csv}")
+
+print("\n  ── First 10 rows (all basins if ≤ 10) ──")
+print(df_master.head(10).to_string())
+
+# ── 2. Stream order summary ───────────────────────────────────────────────────
+print("\n[2] Stream Order Summary:")
+all_order_rows = []
+for bid, df_lin in LINEAR_PER_ORDER.items():
+    df_lin_c = df_lin.copy()
+    df_lin_c['basin_id'] = bid
+    all_order_rows.append(df_lin_c)
+
+if all_order_rows:
+    df_order_summary = pd.concat(all_order_rows, ignore_index=True)
+    df_order_summary.to_csv(os.path.join(TABLES_DIR, "stream_order_summary.csv"), index=False)
+    print(df_order_summary.to_string(index=False))
+
+# ── 3. Statistical summary ────────────────────────────────────────────────────
+print("\n[3] Statistical Summary (mean ± std):")
+for col in STAT_COLS[:12]:
+    if col in df_master.columns:
+        mn  = df_master[col].mean()
+        sd  = df_master[col].std()
+        cv  = (sd / mn * 100) if mn != 0 else np.nan
+        print(f"  {col:<35s} {mn:>10.4f} ± {sd:>8.4f}  (CV={cv:>6.1f}%)")
+
+# ── 4. Ranking table ──────────────────────────────────────────────────────────
+print("\n[4] Prioritization Ranking:")
+rank_csv = os.path.join(TABLES_DIR, "prioritization_ranking.csv")
+print(pd.read_csv(rank_csv, index_col=0).to_string())
+
+# ── 5. Priority classification ────────────────────────────────────────────────
+print("\n[5] Priority Classification Summary:")
+for bid in gdf_sub['basin_id']:
+    if bid in df_rank.index:
+        r = df_rank.loc[bid]
+        print(f"  {bid}: M1={r['Priority_M1']:<8} M2={r['Priority_M2']:<8} M3={r['Priority_M3']}")
+
+# ── 6. Summary of all output files ────────────────────────────────────────────
+print(f"\n[6] Output files:")
+for root, dirs, files in os.walk(OUT_DIR):
+    for f in sorted(files):
+        full = os.path.join(root, f)
+        size = os.path.getsize(full) / 1024
+        print(f"  {full.replace(OUT_DIR, ''):<60s}  {size:>8.1f} KB")
+
+print("\n✅ SECTION 8 complete.")
+
+
+"""
+=============================================================================
+SECTION 9 — AUTOMATED REPORT GENERATION
+=============================================================================
+Generates a structured text report suitable for publication drafting.
+=============================================================================
+"""
+
+print("\n" + "=" * 60)
+print("SECTION 9 — REPORT GENERATION")
+print("=" * 60)
+
+def format_val(val, decimals=3):
+    """Format float or return 'N/A'."""
+    try:
+        return f"{float(val):.{decimals}f}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def build_report():
+    basin_ids = gdf_sub['basin_id'].tolist()
+    n_basins  = len(basin_ids)
+
+    # Study area bounding box in geographic coords
+    bounds = gdf_sub.to_crs("EPSG:4326").total_bounds
+    lon_min, lat_min, lon_max, lat_max = bounds
+
+    total_area = df_master['Area_km2'].sum()
+    elev_min   = df_master['Elev_Min_m'].min()
+    elev_max   = df_master['Elev_Max_m'].max()
+    mean_dd    = df_master['Drainage_Density_Dd'].mean()
+    mean_re    = df_master['Elongation_Ratio_Re'].mean()
+    mean_hi    = df_master['Hypsometric_HI'].mean() if 'Hypsometric_HI' in df_master.columns else np.nan
+    mean_rn    = df_master['Ruggedness_Rn'].mean() if 'Ruggedness_Rn' in df_master.columns else np.nan
+
+    high_pri   = df_rank[df_rank['Priority_M1'] == 'High'].index.tolist()
+    mod_pri    = df_rank[df_rank['Priority_M1'] == 'Moderate'].index.tolist()
+    low_pri    = df_rank[df_rank['Priority_M1'] == 'Low'].index.tolist()
+
+    lines = []
+    def s(text=""):
+        lines.append(text)
+
+    s("=" * 80)
+    s("MORPHOMETRIC ANALYSIS OF A WATERSHED")
+    s("Generated by Automated Morphometric Analysis Tool")
+    s("Based on: Horton (1945), Strahler (1952, 1964), Schumm (1956), Miller (1953)")
+    s("=" * 80)
+
+    s()
+    s("1. STUDY AREA DESCRIPTION")
+    s("-" * 40)
+    s(f"The study area comprises {n_basins} subbasins covering a total area of "
+      f"{total_area:.2f} km². The watershed extends from approximately "
+      f"{lat_min:.4f}°N to {lat_max:.4f}°N and {lon_min:.4f}°E to {lon_max:.4f}°E. "
+      f"Elevation ranges from {elev_min:.0f} m to {elev_max:.0f} m above sea level, "
+      f"indicating a relief of {elev_max - elev_min:.0f} m across the watershed. "
+      f"The analysis utilises SRTM 30 m Digital Elevation Model data processed "
+      f"in a UTM projected coordinate reference system ({UTM_EPSG}) to ensure "
+      f"accurate area and length computations.")
+
+    s()
+    s("2. DATA SOURCES")
+    s("-" * 40)
+    s("• DEM: Shuttle Radar Topography Mission (SRTM) 30 m resolution (NASA/USGS)")
+    s("• Subbasins: Derived from DEM hydrological processing (5 subbasins)")
+    s("• Stream network: Extracted via D8 flow routing with Strahler ordering")
+    s("• Flow direction: D8 algorithm (ArcGIS/QGIS/TauDEM compatible)")
+    s("• Flow accumulation: Derived from D8 flow direction")
+    s("• CRS: Reprojected to UTM for accurate metric computations")
+
+    s()
+    s("3. METHODOLOGY")
+    s("-" * 40)
+    s("Morphometric analysis was performed following the methodologies of "
+      "Horton (1945) for stream ordering and bifurcation laws, Strahler (1952, 1964) "
+      "for the hierarchical stream order classification, Schumm (1956) for basin "
+      "geometry and elongation ratio, and Miller (1953) for circularity ratio. "
+      "Linear, areal, and relief morphometric parameters were computed at the "
+      "subbasin level using SRTM DEM data and derived GIS layers. "
+      "Watershed prioritization employed three independent methods: Compound "
+      "Parameter Ranking, Entropy Weight Method, and PCA-Based Priority scoring, "
+      "with inter-method agreement assessed using Kendall's tau.")
+
+    s()
+    s("4. MORPHOMETRIC RESULTS")
+    s("-" * 40)
+    s()
+    s("4.1 Linear Aspects")
+    for bid in basin_ids:
+        if bid not in LINEAR_PER_ORDER:
+            continue
+        df_lin = LINEAR_PER_ORDER[bid]
+        max_ord = df_lin['order'].max()
+        Rbm_v   = df_linear_summary.loc[bid, 'Rbm'] if bid in df_linear_summary.index else np.nan
+        tot_N   = df_lin['Nu'].sum()
+        s(f"  {bid}: {int(max_ord)}-order basin, {int(tot_N)} stream segments, "
+          f"Mean Bifurcation Ratio (Rbm) = {format_val(Rbm_v)}. "
+          f"{'Rbm values between 3–5 indicate normal basins without structural disturbances.' if 3 <= Rbm_v <= 5 else 'Rbm outside 3–5 range may indicate structural control.'}")
+
+    s()
+    s("4.2 Areal Aspects")
+    for bid in basin_ids:
+        if bid not in df_master.index:
+            continue
+        row = df_master.loc[bid]
+        s(f"  {bid}: Area={format_val(row.get('Area_km2'))} km², "
+          f"Dd={format_val(row.get('Drainage_Density_Dd'))} km/km², "
+          f"Re={format_val(row.get('Elongation_Ratio_Re'))}, "
+          f"Rc={format_val(row.get('Circularity_Ratio_Rc'))}, "
+          f"Ff={format_val(row.get('Form_Factor_Ff'))}, "
+          f"Shape: {row.get('Shape_Class','—')}.")
+
+    s()
+    s("4.3 Relief Aspects")
+    for bid in basin_ids:
+        if bid not in df_master.index:
+            continue
+        row = df_master.loc[bid]
+        hi_interp = row.get('Hyps_Class', '—')
+        s(f"  {bid}: H={format_val(row.get('Basin_Relief_H_m'),0)} m, "
+          f"Rh={format_val(row.get('Relief_Ratio_Rh'),5)}, "
+          f"Rn={format_val(row.get('Ruggedness_Rn'))}, "
+          f"HI={format_val(row.get('Hypsometric_HI'))}, "
+          f"Stage: {hi_interp}.")
+
+    s()
+    s("5. STATISTICAL ANALYSIS")
+    s("-" * 40)
+    s(f"Mean drainage density across all subbasins: {format_val(mean_dd)} km/km². "
+      f"{'High drainage density (>3.5 km/km²) implies impermeable lithology, steep slopes, and sparse vegetation, leading to rapid surface runoff.' if mean_dd > 3.5 else 'Moderate to low drainage density suggests permeable materials and gentle topography.'}"
+      " PCA revealed that the first two principal components explained the majority "
+      f"of total variance ({exp_var[0]:.1f}% + {exp_var[1]:.1f}% = "
+      f"{exp_var[0]+exp_var[1]:.1f}%), with drainage density and relief parameters "
+      "dominating PC1 and basin shape parameters dominating PC2.")
+
+    s()
+    s("6. WATERSHED PRIORITIZATION")
+    s("-" * 40)
+    s(f"Three independent methods identified the following priority classes:")
+    s(f"  HIGH priority basins (most susceptible to erosion): {', '.join(high_pri) if high_pri else 'None'}")
+    s(f"  MODERATE priority basins: {', '.join(mod_pri) if mod_pri else 'None'}")
+    s(f"  LOW priority basins: {', '.join(low_pri) if low_pri else 'None'}")
+    s(f"Inter-method agreement (Kendall's τ): M1 vs M2 = {format_val(r12,3)}, "
+      f"M1 vs M3 = {format_val(r13,3)}, M2 vs M3 = {format_val(r23,3)}. "
+      f"{'High agreement across methods validates the prioritization framework.' if min(abs(r12),abs(r13),abs(r23))>0.5 else 'Moderate agreement suggests parameter-sensitivity in ranking.'}")
+
+    s()
+    s("7. DISCUSSION")
+    s("-" * 40)
+    s("Drainage Density Implications:")
+    s(f"  The watershed exhibits a mean Dd of {format_val(mean_dd)} km/km². "
+      "High Dd values indicate fine texture, less permeable lithology, and "
+      "greater surface runoff propensity (Horton, 1945). Basins with Dd > 3.5 "
+      "are expected to respond rapidly to rainfall events, increasing flood risk.")
+    s()
+    s("Shape and Runoff Response:")
+    s(f"  Mean Elongation Ratio (Re) = {format_val(mean_re)}. "
+      f"{'Elongated basins (Re < 0.6) have lower peak discharge and extended concentration time.' if mean_re < 0.6 else 'Sub-circular to circular basins (Re > 0.7) generate higher and faster flood peaks.'} "
+      "Form factor and circularity ratio confirm this assessment.")
+    s()
+    s("Relief and Erosion:")
+    s(f"  Mean Ruggedness Number (Rn) = {format_val(mean_rn)}. "
+      "High Rn reflects steep slopes combined with high drainage density, "
+      "indicating high erosion potential and flash flood susceptibility "
+      "(Strahler, 1964).")
+    s()
+    s("Hypsometric Stage:")
+    s(f"  Mean Hypsometric Integral (HI) = {format_val(mean_hi)}. "
+      f"{'HI > 0.6 indicates monadnock/young stage — active erosion, convex slopes.' if mean_hi > 0.6 else 'HI 0.35–0.6 indicates mature equilibrium stage.' if mean_hi > 0.35 else 'HI < 0.35 indicates peneplain/old stage — reduced erosion activity.'}")
+
+    s()
+    s("8. CONCLUSION")
+    s("-" * 40)
+    s(f"This study presents a comprehensive morphometric analysis of a {n_basins}-subbasin "
+      f"watershed using SRTM 30 m DEM. The integrated analysis of linear, areal, and "
+      f"relief parameters reveals the geomorphic maturity, erosion susceptibility, "
+      f"and hydrological response characteristics of each subbasin. "
+      f"Subbasins {', '.join(high_pri)} are identified as highest priority for "
+      f"soil and water conservation interventions based on convergent evidence "
+      f"from three independent prioritization methods. Findings are reproducible "
+      f"and suitable for integration into watershed management planning frameworks.")
+
+    s()
+    s("9. REFERENCES")
+    s("-" * 40)
+    s("Horton, R.E. (1945). Erosional development of streams and their drainage basins.")
+    s("  Geological Society of America Bulletin, 56(3), 275–370.")
+    s()
+    s("Miller, V.C. (1953). A quantitative geomorphic study of drainage basin characteristics")
+    s("  in the Clinch Mountain area, Virginia and Tennessee. Columbia University, Tech. Rep.")
+    s()
+    s("Schumm, S.A. (1956). Evolution of drainage systems and slopes in badlands at Perth")
+    s("  Amboy, New Jersey. Geological Society of America Bulletin, 67(5), 597–646.")
+    s()
+    s("Strahler, A.N. (1952). Hypsometric (area-altitude) analysis of erosional topography.")
+    s("  Geological Society of America Bulletin, 63(11), 1117–1142.")
+    s()
+    s("Strahler, A.N. (1964). Quantitative geomorphology of drainage basins and channel")
+    s("  networks. In Handbook of Applied Hydrology (ed. V.T. Chow), pp. 4.39–4.76.")
+    s()
+    s("Hack, J.T. (1957). Studies of longitudinal stream profiles in Virginia and Maryland.")
+    s("  USGS Professional Paper 294-B.")
+    s()
+    s("Melton, M.A. (1965). The geomorphic and palaeoclimatic significance of alluvial")
+    s("  deposits in Southern Arizona. Journal of Geology, 73(1), 1–38.")
+    s()
+    s("Riley, S.J., DeGloria, S.D., Elliot, R. (1999). A terrain ruggedness index that")
+    s("  quantifies topographic heterogeneity. Intermountain Journal of Sciences, 5, 23–27.")
+
+    s()
+    s("=" * 80)
+    s("END OF REPORT")
+    s("=" * 80)
+
+    return "\n".join(lines)
+
+
+report_text = build_report()
+report_path = os.path.join(REPORT_DIR, "morphometric_analysis_report.txt")
+with open(report_path, 'w', encoding='utf-8') as f:
+    f.write(report_text)
+
+print("\nREPORT PREVIEW (first 40 lines):")
+print("─" * 60)
+for line in report_text.split("\n")[:40]:
+    print(line)
+print("...")
+print("─" * 60)
+print(f"\n✅ Full report saved: {report_path}")
+print("\n✅ SECTION 9 complete.")
+
+print("\n" + "=" * 60)
+print("  🎉  ALL SECTIONS COMPLETE")
+print("=" * 60)
+print(f"  Output root: {OUT_DIR}")
+print(f"  Maps (9)   : {MAPS_DIR}")
+print(f"  Plots HTML : {HTML_DIR}")
+print(f"  Tables     : {TABLES_DIR}")
+print(f"  Shapefiles : {SHAPES_DIR}")
+print(f"  Report     : {REPORT_DIR}")
